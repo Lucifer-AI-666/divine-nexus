@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useSpeech } from "@/hooks/use-speech";
 
 type IdentityKey = "dio" | "michele" | "matildina" | "lucifero";
 
@@ -41,6 +42,7 @@ export default function ChatScreen() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const { speak, stop, isSpeaking, currentId } = useSpeech();
 
   const chatMutation = trpc.chat.send.useMutation();
 
@@ -159,9 +161,25 @@ export default function ChatScreen() {
   const renderMessage = ({ item }: { item: Message }) => {
     const identity = item.identity ? IDENTITIES[item.identity] : null;
     const isUser = item.role === "user";
+    const isCurrentlySpeaking = isSpeaking && currentId === item.id;
 
     return (
-      <View className={`flex-row mb-2 ${isUser ? "justify-end pr-2" : "justify-start pl-2"}`}>
+      <View className={`flex-row mb-2 ${isUser ? "justify-end pr-2" : "justify-start pl-2"} items-end gap-2`}>
+        {!isUser && (
+          <Pressable
+            onPress={() => speak(item.content, item.id)}
+            style={({ pressed }) => [{
+              opacity: pressed ? 0.6 : 1,
+              paddingBottom: 8,
+            }]}
+          >
+            <MaterialIcons
+              name={isCurrentlySpeaking ? "stop-circle" : "play-circle"}
+              size={24}
+              color={isCurrentlySpeaking ? "#EF4444" : "#0a7ea4"}
+            />
+          </Pressable>
+        )}
         <View
           className={`max-w-xs rounded-2xl p-3 ${
             isUser ? "bg-primary" : "bg-surface"
@@ -326,6 +344,28 @@ export default function ChatScreen() {
                 <Text className="text-xs text-muted">
                   Identità attuale: {IDENTITIES[currentIdentity].name}
                 </Text>
+              </View>
+
+              {/* Voice Settings */}
+              <View className="mb-6 bg-surface rounded-lg p-4 border border-border">
+                <Text className="text-sm font-bold text-foreground mb-3">Controlli Vocali</Text>
+                <Pressable
+                  onPress={() => isSpeaking ? stop() : null}
+                  style={({ pressed }) => [{
+                    backgroundColor: isSpeaking ? "#EF4444" : "#666",
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    opacity: pressed ? 0.8 : 1,
+                    marginBottom: 8,
+                  }]}
+                  disabled={!isSpeaking}
+                >
+                  <Text className={isSpeaking ? "text-white font-bold text-center" : "text-muted text-center"}>
+                    {isSpeaking ? "Ferma Lettura" : "Nessuna Lettura in Corso"}
+                  </Text>
+                </Pressable>
+                <Text className="text-xs text-muted">Premi il pulsante play su qualsiasi messaggio per ascoltare con voce naturale</Text>
               </View>
 
               {/* Reset Memory */}
