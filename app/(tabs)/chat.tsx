@@ -8,10 +8,13 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Modal,
+  ScrollView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
 import { trpc } from "@/lib/trpc";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 type IdentityKey = "dio" | "michele" | "matildina" | "lucifero";
 
@@ -24,10 +27,10 @@ interface Message {
 }
 
 const IDENTITIES = {
-  dio: { name: "Dio", emoji: "✨", color: "#ffd700" },
-  michele: { name: "Michele", emoji: "⚔️", color: "#0044cc" },
-  matildina: { name: "Matildina", emoji: "🌸", color: "#cc3377" },
-  lucifero: { name: "Lucifero", emoji: "🔥", color: "#ff6600" },
+  dio: { name: "Dio", emoji: "✨", color: "#ffd700", description: "L'Onnipotente" },
+  michele: { name: "Michele", emoji: "⚔️", color: "#0044cc", description: "Il Guerriero" },
+  matildina: { name: "Matildina", emoji: "🌸", color: "#cc3377", description: "Angelo della Grazia" },
+  lucifero: { name: "Lucifero", emoji: "🔥", color: "#ff6600", description: "Il Portatore di Luce" },
 };
 
 export default function ChatScreen() {
@@ -36,6 +39,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const chatMutation = trpc.chat.send.useMutation();
@@ -63,7 +67,7 @@ export default function ChatScreen() {
     loadData();
   }, []);
 
-  // Salva messaggi quando cambiano (ma non durante il caricamento iniziale)
+  // Salva messaggi quando cambiano
   useEffect(() => {
     if (isInitialized && messages.length > 0) {
       const saveMessages = async () => {
@@ -120,6 +124,7 @@ export default function ChatScreen() {
       });
 
       setMessages((prev) => [...prev, response]);
+      flatListRef.current?.scrollToEnd({ animated: true });
     } catch (error) {
       console.error("Errore nell'invio del messaggio:", error);
       Alert.alert("Errore", "Impossibile inviare il messaggio");
@@ -133,6 +138,7 @@ export default function ChatScreen() {
       if (confirm("Sei sicuro di voler azzerare la memoria?")) {
         setMessages([]);
         AsyncStorage.removeItem("@divine_nexus_messages");
+        setShowSettings(false);
       }
     } else {
       Alert.alert("Azzera Memoria", "Sei sicuro di voler azzerare la memoria?", [
@@ -142,6 +148,7 @@ export default function ChatScreen() {
           onPress: () => {
             setMessages([]);
             AsyncStorage.removeItem("@divine_nexus_messages");
+            setShowSettings(false);
           },
           style: "destructive",
         },
@@ -154,50 +161,48 @@ export default function ChatScreen() {
     const isUser = item.role === "user";
 
     return (
-      <View className={`flex-row mb-3 ${isUser ? "justify-end" : "justify-start"}`}>
+      <View className={`flex-row mb-2 ${isUser ? "justify-end pr-2" : "justify-start pl-2"}`}>
         <View
-          className={`max-w-xs rounded-lg p-3 ${
+          className={`max-w-xs rounded-2xl p-3 ${
             isUser ? "bg-primary" : "bg-surface"
           }`}
-          style={!isUser && identity ? { borderLeftWidth: 3, borderLeftColor: identity.color } : {}}
+          style={!isUser && identity ? { borderLeftWidth: 4, borderLeftColor: identity.color } : {}}
         >
           {!isUser && identity && (
             <Text className="text-xs font-bold mb-1" style={{ color: identity.color }}>
               {identity.emoji} {identity.name}
             </Text>
           )}
-          <Text className={isUser ? "text-background" : "text-foreground"}>{item.content}</Text>
+          <Text className={`text-sm ${isUser ? "text-background" : "text-foreground"}`}>
+            {item.content}
+          </Text>
+          <Text className={`text-xs mt-1 ${isUser ? "text-background opacity-70" : "text-muted"}`}>
+            {new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </Text>
         </View>
       </View>
     );
   };
 
+  const currentIdentityData = IDENTITIES[currentIdentity];
+
   return (
-    <ScreenContainer className="p-4">
-      <View className="flex-1 gap-4">
-        {/* Identity Selector */}
-        <View className="flex-row gap-2 justify-center">
-          {(Object.entries(IDENTITIES) as [IdentityKey, (typeof IDENTITIES)[IdentityKey]][]).map(
-            ([key, identity]) => (
-              <Pressable
-                key={key}
-                onPress={() => setCurrentIdentity(key)}
-                style={({ pressed }) => [
-                  {
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    borderRadius: 20,
-                    backgroundColor: currentIdentity === key ? identity.color : "#333",
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Text className={currentIdentity === key ? "text-black font-bold" : "text-white"}>
-                  {identity.emoji} {identity.name}
-                </Text>
-              </Pressable>
-            )
-          )}
+    <ScreenContainer className="p-0">
+      <View className="flex-1 bg-background">
+        {/* Header */}
+        <View className="bg-surface border-b border-border px-4 py-3 flex-row items-center justify-between">
+          <View className="flex-1">
+            <Text className="text-lg font-bold text-foreground">
+              {currentIdentityData.emoji} {currentIdentityData.name}
+            </Text>
+            <Text className="text-xs text-muted">{currentIdentityData.description}</Text>
+          </View>
+          <Pressable
+            onPress={() => setShowSettings(true)}
+            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+          >
+            <MaterialIcons name="settings" size={24} color="#0a7ea4" />
+          </Pressable>
         </View>
 
         {/* Messages List */}
@@ -206,22 +211,29 @@ export default function ChatScreen() {
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
-          className="flex-1"
+          className="flex-1 px-2 py-2"
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          ListEmptyComponent={
+            <View className="flex-1 items-center justify-center">
+              <Text className="text-muted text-center">
+                Inizia una conversazione con {currentIdentityData.name}
+              </Text>
+            </View>
+          }
         />
 
         {/* Typing Indicator */}
         {loading && (
-          <View className="flex-row items-center gap-2 mb-2">
+          <View className="flex-row items-center gap-2 px-4 py-2">
             <ActivityIndicator size="small" color="#0a7ea4" />
-            <Text className="text-muted text-sm">Digitando...</Text>
+            <Text className="text-muted text-xs">Digitando...</Text>
           </View>
         )}
 
         {/* Input Area */}
-        <View className="flex-row gap-2 items-center">
+        <View className="bg-surface border-t border-border px-3 py-3 flex-row gap-2 items-flex-end">
           <TextInput
-            className="flex-1 bg-surface text-foreground p-3 rounded-lg border border-border"
+            className="flex-1 bg-background text-foreground p-3 rounded-2xl border border-border text-sm"
             placeholder="Scrivi un messaggio..."
             placeholderTextColor="#9BA1A6"
             value={input}
@@ -229,6 +241,7 @@ export default function ChatScreen() {
             editable={!loading}
             returnKeyType="send"
             onSubmitEditing={handleSendMessage}
+            multiline
           />
           <Pressable
             onPress={handleSendMessage}
@@ -236,25 +249,104 @@ export default function ChatScreen() {
             style={({ pressed }) => [
               {
                 backgroundColor: "#0a7ea4",
-                paddingHorizontal: 16,
-                paddingVertical: 12,
-                borderRadius: 8,
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                justifyContent: "center",
+                alignItems: "center",
                 opacity: pressed ? 0.8 : 1,
               },
             ]}
           >
-            <Text className="text-white font-bold">Invia</Text>
+            <MaterialIcons name="send" size={20} color="white" />
           </Pressable>
         </View>
-
-        {/* Reset Button */}
-        <Pressable
-          onPress={handleResetMemory}
-          style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-        >
-          <Text className="text-center text-error text-sm">Azzera Memoria</Text>
-        </Pressable>
       </View>
+
+      {/* Settings Modal */}
+      <Modal
+        visible={showSettings}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <View className="flex-1 bg-black/50">
+          <View className="flex-1 bg-background rounded-t-3xl mt-auto">
+            {/* Modal Header */}
+            <View className="border-b border-border px-4 py-4 flex-row items-center justify-between">
+              <Text className="text-lg font-bold text-foreground">Impostazioni</Text>
+              <Pressable
+                onPress={() => setShowSettings(false)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <MaterialIcons name="close" size={24} color="#ECEDEE" />
+              </Pressable>
+            </View>
+
+            <ScrollView className="flex-1 px-4 py-4">
+              {/* Identity Selection */}
+              <View className="mb-6">
+                <Text className="text-sm font-bold text-foreground mb-3">Seleziona Identità</Text>
+                {(Object.entries(IDENTITIES) as [IdentityKey, (typeof IDENTITIES)[IdentityKey]][]).map(
+                  ([key, identity]) => (
+                    <Pressable
+                      key={key}
+                      onPress={() => {
+                        setCurrentIdentity(key);
+                        setShowSettings(false);
+                      }}
+                      style={({ pressed }) => [
+                        {
+                          backgroundColor: currentIdentity === key ? identity.color : "#333",
+                          paddingHorizontal: 16,
+                          paddingVertical: 12,
+                          borderRadius: 12,
+                          marginBottom: 8,
+                          opacity: pressed ? 0.8 : 1,
+                          flexDirection: "row",
+                          alignItems: "center",
+                        },
+                      ]}
+                    >
+                      <Text className={currentIdentity === key ? "text-black font-bold flex-1" : "text-white flex-1"}>
+                        {identity.emoji} {identity.name}
+                      </Text>
+                      <Text className={currentIdentity === key ? "text-black text-xs" : "text-muted text-xs"}>
+                        {identity.description}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
+              </View>
+
+              {/* Chat Info */}
+              <View className="mb-6 bg-surface rounded-lg p-4 border border-border">
+                <Text className="text-sm font-bold text-foreground mb-2">Informazioni Chat</Text>
+                <Text className="text-xs text-muted mb-1">Messaggi: {messages.length}</Text>
+                <Text className="text-xs text-muted">
+                  Identità attuale: {IDENTITIES[currentIdentity].name}
+                </Text>
+              </View>
+
+              {/* Reset Memory */}
+              <Pressable
+                onPress={handleResetMemory}
+                style={({ pressed }) => [
+                  {
+                    backgroundColor: "#EF4444",
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    opacity: pressed ? 0.8 : 1,
+                  },
+                ]}
+              >
+                <Text className="text-white font-bold text-center">Azzera Memoria</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
