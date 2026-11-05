@@ -1,11 +1,18 @@
 import { COOKIE_NAME, SESSION_TTL_MS } from "../../shared/const.js";
 import type { Express, Request, Response } from "express";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { User } from "../../drizzle/schema";
-import { DuplicateEmailError, createLocalUser, getUserByEmail } from "../db";
+import {
+  DuplicateEmailError,
+  createLocalUser,
+  getUserByEmail,
+  setExistingUserPassword,
+} from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { hashPassword, verifyPassword } from "./password";
 import { sdk } from "./sdk";
+import { ENV } from "./env";
 
 const credentialsSchema = z.object({
   email: z.string().trim().toLowerCase().email().max(320),
@@ -14,6 +21,7 @@ const credentialsSchema = z.object({
 
 const registerSchema = credentialsSchema.extend({
   name: z.string().trim().min(1).max(100).optional(),
+  enrollmentToken: z.string().min(1).max(512).optional(),
 });
 
 // Placeholder hash so login takes the same time whether or not the email exists.
@@ -21,17 +29,39 @@ const DUMMY_HASH = hashPassword("dummy-password-for-timing");
 
 const MAX_ATTEMPTS = 10;
 const WINDOW_MS = 15 * 60 * 1000;
+const MAX_BUCKETS = 10_000;
+const CLEANUP_INTERVAL_MS = 60 * 1000;
 const attempts = new Map<string, { count: number; resetAt: number }>();
+let nextCleanupAt = 0;
 
 function isRateLimited(key: string): boolean {
   const now = Date.now();
+  if (now >= nextCleanupAt) {
+    for (const [bucketKey, bucket] of attempts) {
+      if (bucket.resetAt <= now) attempts.delete(bucketKey);
+    }
+    nextCleanupAt = now + CLEANUP_INTERVAL_MS;
+  }
+
   const entry = attempts.get(key);
   if (!entry || entry.resetAt <= now) {
+    if (!entry && attempts.size >= MAX_BUCKETS) {
+      const oldestKey = attempts.keys().next().value;
+      if (oldestKey !== undefined) attempts.delete(oldestKey);
+    }
     attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
     return false;
   }
   entry.count += 1;
   return entry.count > MAX_ATTEMPTS;
+}
+
+function hasValidEnrollmentToken(email: string, token: string | undefined): boolean {
+  const expected = ENV.passwordEnrollmentTokens[email];
+  if (!expected || !token) return false;
+  const expectedHash = createHash("sha256").update(expected).digest();
+  const providedHash = createHash("sha256").update(token).digest();
+  return timingSafeEqual(expectedHash, providedHash);
 }
 
 function buildUserResponse(user: User) {
@@ -66,12 +96,38 @@ export function registerAuthRoutes(app: Express) {
       return;
     }
 
-    const { email, password, name } = parsed.data;
+    const { email, password, name, enrollmentToken } = parsed.data;
+    const verifiedEnrollment = hasValidEnrollmentToken(email, enrollmentToken);
+    if (ENV.ownerEmail === email && !verifiedEnrollment) {
+      res.status(403).json({ error: "Verified owner bootstrap token required" });
+      return;
+    }
+
     try {
+      const existing = await getUserByEmail(email);
+      if (existing) {
+        if (existing.passwordHash || !verifiedEnrollment) {
+          res.status(409).json({ error: "Email already registered" });
+          return;
+        }
+        const enrolled = await setExistingUserPassword(
+          email,
+          await hashPassword(password),
+          ENV.ownerEmail === email,
+        );
+        if (!enrolled) {
+          res.status(409).json({ error: "Email already registered" });
+          return;
+        }
+        await startSession(req, res, enrolled);
+        return;
+      }
+
       const user = await createLocalUser({
         email,
         name: name ?? email.split("@")[0],
         passwordHash: await hashPassword(password),
+        isAdmin: ENV.ownerEmail === email && verifiedEnrollment,
       });
       await startSession(req, res, user);
     } catch (error) {
@@ -91,7 +147,10 @@ export function registerAuthRoutes(app: Express) {
       return;
     }
     const { email, password } = parsed.data;
-    if (isRateLimited(`login:${req.ip}:${email}`)) {
+    if (
+      isRateLimited(`login:ip:${req.ip}`) ||
+      isRateLimited(`login:${req.ip}:${email}`)
+    ) {
       res.status(429).json({ error: "Too many attempts, try again later" });
       return;
     }
@@ -130,6 +189,11 @@ export function registerAuthRoutes(app: Express) {
 
   // Turns a valid Bearer token into a session cookie (used by embedded web previews).
   app.post("/api/auth/session", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    if (typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
+      res.status(400).json({ error: "****** required" });
+      return;
+    }
     try {
       const user = await sdk.authenticateRequest(req);
       const token = (req.headers.authorization ?? "").slice("Bearer ".length).trim();

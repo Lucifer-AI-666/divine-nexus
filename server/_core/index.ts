@@ -7,6 +7,7 @@ import { registerAuthRoutes } from "./auth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { ENV } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -29,6 +30,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  app.set("trust proxy", ENV.trustedProxies.length ? ENV.trustedProxies : false);
   const server = createServer(app);
 
   // Enable CORS for all routes - reflect the request origin to support credentials

@@ -19,6 +19,12 @@ pnpm dev
 # Scansiona il QR code con Expo Go su iOS/Android
 ```
 
+## Configurazione autenticazione
+
+- Imposta `JWT_SECRET` con un segreto casuale forte.
+- Imposta `OWNER_EMAIL` per l'account amministratore e `PASSWORD_ENROLLMENT_TOKENS` come oggetto JSON che associa ogni email da verificare a un token casuale di almeno 32 caratteri. Consegna i token agli utenti tramite un canale indipendente; quello dell'owner abilita il bootstrap admin. Gli utenti esistenti senza password usano lo stesso token per l'enrollment.
+- Se il server è dietro un reverse proxy, imposta `TRUST_PROXY` con gli IP o CIDR dei soli proxy attendibili, separati da virgole. Lascialo non configurato senza proxy.
+
 ## Build APK con Expo EAS (Consigliato)
 
 ### 1. Setup Iniziale

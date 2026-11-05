@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users } from "../drizzle/schema";
@@ -112,6 +112,7 @@ export async function createLocalUser(input: {
   email: string;
   name: string;
   passwordHash: string;
+  isAdmin?: boolean;
 }) {
   const db = await getDb();
   if (!db) {
@@ -126,7 +127,7 @@ export async function createLocalUser(input: {
       name: input.name,
       passwordHash: input.passwordHash,
       loginMethod: "password",
-      role: ENV.ownerEmail && input.email === ENV.ownerEmail ? "admin" : "user",
+      role: input.isAdmin ? "admin" : "user",
       lastSignedIn: new Date(),
     });
   } catch (error) {
@@ -140,6 +141,31 @@ export async function createLocalUser(input: {
   const created = await getUserByOpenId(openId);
   if (!created) throw new Error("Failed to load created user");
   return created;
+}
+
+export async function setExistingUserPassword(
+  email: string,
+  passwordHash: string,
+  isAdmin: boolean,
+) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot enroll user: database not available");
+    return undefined;
+  }
+
+  await db
+    .update(users)
+    .set({
+      passwordHash,
+      loginMethod: "password",
+      ...(isAdmin ? { role: "admin" as const } : {}),
+      lastSignedIn: new Date(),
+    })
+    .where(and(eq(users.email, email), isNull(users.passwordHash)));
+
+  const updated = await getUserByEmail(email);
+  return updated?.passwordHash === passwordHash ? updated : undefined;
 }
 
 // TODO: add feature queries here as your schema grows.

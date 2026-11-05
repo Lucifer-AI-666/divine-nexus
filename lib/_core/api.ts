@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { getApiBaseUrl } from "@/constants/oauth";
+import { getApiBaseUrl } from "../../constants/oauth";
 import * as Auth from "./auth";
 
 type ApiResponse<T> = {
@@ -98,6 +98,14 @@ async function authenticate(endpoint: string, body: Record<string, string>): Pro
   });
   if (Platform.OS !== "web") {
     await Auth.setSessionToken(result.app_session_id);
+    await Auth.setUserInfo({
+      id: result.user.id,
+      openId: result.user.openId,
+      name: result.user.name,
+      email: result.user.email,
+      loginMethod: result.user.loginMethod,
+      lastSignedIn: new Date(result.user.lastSignedIn),
+    });
   }
   return { sessionToken: result.app_session_id, user: result.user };
 }
