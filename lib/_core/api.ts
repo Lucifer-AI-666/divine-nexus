@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { getApiBaseUrl } from "@/constants/oauth";
+import { getApiBaseUrl } from "../../constants/oauth";
 import * as Auth from "./auth";
 
 type ApiResponse<T> = {
@@ -89,31 +89,33 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
   }
 }
 
-// OAuth callback handler - exchange code for session token
-// Calls /api/oauth/mobile endpoint which returns JSON with app_session_id and user
-export async function exchangeOAuthCode(
-  code: string,
-  state: string,
-): Promise<{ sessionToken: string; user: any }> {
-  console.log("[API] exchangeOAuthCode called");
-  // Use GET with query params
-  const params = new URLSearchParams({ code, state });
-  const endpoint = `/api/oauth/mobile?${params.toString()}`;
-  console.log("[API] Calling OAuth mobile endpoint:", endpoint);
-  const result = await apiCall<{ app_session_id: string; user: any }>(endpoint);
+type AuthResult = { sessionToken: string; user: any };
 
-  // Convert app_session_id to sessionToken for compatibility
-  const sessionToken = result.app_session_id;
-  console.log("[API] OAuth exchange result:", {
-    hasSessionToken: !!sessionToken,
-    hasUser: !!result.user,
-    sessionToken: sessionToken ? `${sessionToken.substring(0, 50)}...` : null,
+async function authenticate(endpoint: string, body: Record<string, string>): Promise<AuthResult> {
+  const result = await apiCall<{ app_session_id: string; user: any }>(endpoint, {
+    method: "POST",
+    body: JSON.stringify(body),
   });
+  if (Platform.OS !== "web") {
+    await Auth.setSessionToken(result.app_session_id);
+    await Auth.setUserInfo({
+      id: result.user.id,
+      openId: result.user.openId,
+      name: result.user.name,
+      email: result.user.email,
+      loginMethod: result.user.loginMethod,
+      lastSignedIn: new Date(result.user.lastSignedIn),
+    });
+  }
+  return { sessionToken: result.app_session_id, user: result.user };
+}
 
-  return {
-    sessionToken,
-    user: result.user,
-  };
+export function login(email: string, password: string): Promise<AuthResult> {
+  return authenticate("/api/auth/login", { email, password });
+}
+
+export function register(email: string, password: string, name?: string): Promise<AuthResult> {
+  return authenticate("/api/auth/register", { email, password, ...(name ? { name } : {}) });
 }
 
 // Logout

@@ -3,10 +3,11 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
+import { registerAuthRoutes } from "./auth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { ENV } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -29,6 +30,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  app.set("trust proxy", ENV.trustedProxies.length ? ENV.trustedProxies : false);
   const server = createServer(app);
 
   // Enable CORS for all routes - reflect the request origin to support credentials
@@ -56,7 +58,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   registerStorageProxy(app);
-  registerOAuthRoutes(app);
+  registerAuthRoutes(app);
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
