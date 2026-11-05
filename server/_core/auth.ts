@@ -1,6 +1,6 @@
 import { COOKIE_NAME, SESSION_TTL_MS } from "../../shared/const.js";
 import type { Express, Request, Response } from "express";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { User } from "../../drizzle/schema";
 import {
@@ -59,9 +59,12 @@ function isRateLimited(key: string): boolean {
 function hasValidEnrollmentToken(email: string, token: string | undefined): boolean {
   const expected = ENV.passwordEnrollmentTokens[email];
   if (!expected || !token) return false;
-  const expectedHash = createHash("sha256").update(expected).digest();
-  const providedHash = createHash("sha256").update(token).digest();
-  return timingSafeEqual(expectedHash, providedHash);
+  const expectedBytes = Buffer.from(expected);
+  const providedBytes = Buffer.from(token);
+  return (
+    expectedBytes.length === providedBytes.length &&
+    timingSafeEqual(expectedBytes, providedBytes)
+  );
 }
 
 function buildUserResponse(user: User) {
