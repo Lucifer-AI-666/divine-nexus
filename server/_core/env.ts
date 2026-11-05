@@ -35,6 +35,9 @@ export const ENV = {
     .map((proxy) => proxy.trim())
     .filter(Boolean),
   isProduction: process.env.NODE_ENV === "production",
+  llmApiUrl: process.env.LLM_API_URL || "https://api.groq.com/openai/v1",
+  llmApiKey: process.env.LLM_API_KEY || process.env.GROQ_API_KEY || "",
+  llmModel: process.env.LLM_MODEL || "llama-3.3-70b-versatile",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
 };
